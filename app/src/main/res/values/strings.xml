@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TrackerLens</string>
+    <string name="back">Back</string>
+    <string name="info">About TrackerLens</string>
+    <string name="close">Close</string>
+
+    <plurals name="hero_apps">
+        <item quantity="one">app contains known trackers</item>
+        <item quantity="other">apps contain known trackers</item>
+    </plurals>
+    <string name="hero_loading">Reading your apps…</string>
+    <string name="hero_scanning">Scanning %1$d of %2$d apps…</string>
+    <string name="hero_done">%1$d different trackers · %2$d apps scanned</string>
+    <string name="hero_done_unreadable">%1$d different trackers · %2$d apps scanned, %3$d not readable</string>
+    <string name="tab_apps">Apps</string>
+    <string name="tab_trackers">Trackers</string>
+    <string name="search_hint">Search</string>
+    <string name="show_system">Scan and show system apps</string>
+    <string name="empty_apps">No apps found.</string>
+    <string name="empty_trackers">No known tracker found.</string>
+    <string name="empty_search">No results.</string>
+    <string name="empty_scanning">Scanning your apps…</string>
+    <string name="load_failed">Could not read your apps.</string>
+    <string name="open_failed">Android could not open this settings page.</string>
+
+    <string name="summary_none">No known tracker found</string>
+    <string name="summary_unreadable">Code could not be read</string>
+    <string name="summary_more">%1$s +%2$d</string>
+
+    <string name="section_trackers">Known trackers</string>
+    <string name="section_signals">Also noticed</string>
+    <string name="section_coverage">How complete is this</string>
+    <string name="section_about_tracker">About</string>
+    <plurals name="section_apps">
+        <item quantity="one">%1$d app</item>
+        <item quantity="other">%1$d apps</item>
+    </plurals>
+    <string name="app_system">System app</string>
+    <string name="open_settings">Manage in Android settings</string>
+    <string name="open_appwall">Block Internet with AppWall</string>
+    <string name="detected_by">Detected by</string>
+    <string name="no_apps_with_tracker">No visible app contains this tracker.</string>
+
+    <plurals name="evidence_classes">
+        <item quantity="one">%1$d class in code</item>
+        <item quantity="other">%1$d classes in code</item>
+    </plurals>
+    <string name="evidence_manifest">declared in manifest</string>
+    <string name="evidence_manifest_only">declared in manifest, no matching code found</string>
+    <string name="section_declared">Declared only, no code found</string>
+    <string name="summary_declared">Declared only: %1$s</string>
+
+    <string name="signal_ad_id">Advertising ID permission</string>
+    <string name="signal_ad_id_detail">The app declares it can read your advertising ID, which ad and analytics services use to recognize a device across apps.</string>
+
+    <plurals name="coverage_full">
+        <item quantity="one">Code read: %1$d class</item>
+        <item quantity="other">Code read: %1$d classes</item>
+    </plurals>
+    <plurals name="coverage_partial">
+        <item quantity="one">Code partly read: %1$d class</item>
+        <item quantity="other">Code partly read: %1$d classes</item>
+    </plurals>
+    <string name="coverage_none">Code could not be read</string>
+    <string name="coverage_note">A match shows the code is in the app, not that it sends data. Renamed code, native code and code downloaded later can stay hidden, so no match does not prove an app is free of trackers.</string>
+
+    <string name="category_advertising">Advertising</string>
+    <string name="category_advertising_description">Shows ads in the app. These services usually collect device and usage data to choose and measure ads.</string>
+    <string name="category_attribution">Attribution</string>
+    <string name="category_attribution_description">Measures which ad or campaign led to an install or a purchase.</string>
+    <string name="category_analytics">Analytics</string>
+    <string name="category_analytics_description">Records how the app is used, such as screens, events and sessions, and reports it to a service.</string>
+    <string name="category_engagement">Engagement</string>
+    <string name="category_engagement_description">Sends targeted notifications or messages, based on a profile of how you use the app.</string>
+    <string name="category_location">Location</string>
+    <string name="category_location_description">Collects location data for advertising, measurement or data services, when the app has that permission.</string>
+    <string name="category_diagnostics">Diagnostics</string>
+    <string name="category_diagnostics_description">Reports crashes and performance problems. It can include device details and traces of what you did before a problem.</string>
+
+    <string name="info_message">TrackerLens looks inside your apps for the code of %1$d known ad, analytics and tracking services. It has no Internet permission and no ads or analytics, so your app list stays on your phone.\n\nA match shows the code is in the app, not that it is active or sending data. It does not mean the app is malicious, and many apps use these services for ordinary reasons.\n\nNo match does not prove an app is free of trackers. Renamed code, native code, code downloaded later and services outside the list stay hidden.\n\nResults are kept on the phone so unchanged apps are not scanned again. TrackerLens only sees the current profile, so a work profile needs its own copy.</string>
+</resources>
