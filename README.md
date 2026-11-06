@@ -33,26 +33,30 @@ TrackerLens has no Internet permission, so your list of apps and the results sta
 - **Apps:** every app ranked by the number of known trackers it contains
 - **Trackers:** every tracker found, with the apps that contain it
 - **Evidence:** the number of matching classes and whether the manifest declares the service
-- **Coverage:** a clear message when the code of an app could not be read
+- **Coverage:** a clear message and a `?` tag when the code or manifest of an app could not be fully read
 - **Advertising ID:** shows the apps that declare the advertising ID permission
 - **Search:** by app, package, tracker, owner or category
 - **System apps:** an option to scan them too
-- **AppWall link:** open [AppWall](https://github.com/Nekuzaky/android-app-firewall) to cut Internet access, when it is installed
+- **AppWall link:** open [AppWall](https://github.com/Nekuzaky/android-app-firewall) to cut Internet access, shown only when the installed app carries the AppWall release signature
 - No ads, no analytics, no account and no third-party libraries
 
 ## How it works
 
 1. TrackerLens asks Android for the installed apps and the paths of their APK files, which any app can read.
-2. It reads the class names from every `classes*.dex` file, without loading or running any of that code.
+2. It reads the class names from `classes.dex`, `classes2.dex` and so on, stopping at the first missing number as Android does, without loading or running any of that code.
 3. It compares the package of each class with its list of known services. A match must stop at a package boundary, so `com.applovin` never matches `com.applovinish`.
 4. It also checks the components and metadata the app declares in its manifest.
-5. It stores the results privately, so an app is only scanned again after an update.
+5. It stores the results privately, so an app is only scanned again after an update. A scan that failed unexpectedly, ran out of time or could not read the manifest is not stored, and is tried again later.
+
+Each app has a scan budget, so a hostile APK cannot stall the scan: 2 GiB of uncompressed DEX data, 120 seconds and 512 DEX files. An app over budget is shown as **Code could not be read**.
 
 | Result | Meaning |
 | --- | --- |
 | **Known tracker** | Classes from this service are in the code of the app |
 | **Declared only** | The manifest mentions the service, but no matching code was found. This is not counted as a tracker |
-| **Code could not be read** | The app has no readable DEX file, which is common for preinstalled system apps |
+| **Code only partly read** | At least one DEX file or class could not be read, and no tracker was found in the rest. Tagged `?`, because a tracker may be in the part that was not read |
+| **Code could not be read** | No DEX file could be read, which is common for preinstalled system apps, or the app went over its scan budget. Tagged `?` |
+| **Manifest not fully read** | Android could not return the whole manifest of the app, so declared services and the advertising ID permission may be missing. The code is still scanned. Tagged `?` |
 
 The list covers advertising, attribution, analytics, engagement, location and diagnostics services. It is in [Catalog.kt](app/src/main/java/dev/nekuz/trackerlens/Catalog.kt), and corrections are welcome.
 
@@ -65,7 +69,7 @@ The list covers advertising, attribution, analytics, engagement, location and di
 ## Privacy
 
 - No Internet permission, so TrackerLens cannot send your data online.
-- Results stay in the private storage of the app and are excluded from Android backups.
+- Results stay in the private storage of the app and are excluded from Android backups and device-to-device transfers.
 - The code of other apps is only read as data. It is never loaded or run.
 
 ### Permissions
@@ -137,19 +141,22 @@ JAVA_HOME=/path/to/jdk-21 ./gradlew testDebugUnitTest
 - **Presence, not behavior.** TrackerLens does not watch network traffic and cannot tell whether a service is active.
 - **Renamed code.** An SDK can stay hidden if its packages were renamed by a code shrinker, and the classes that remain can be very few.
 - **Other hiding places.** Native code, encrypted or packed code, and code downloaded after install are not read.
+- **Newer DEX formats.** DEX version 041 and later, including the container format, are not parsed yet, so those files count as not read.
 - **The list is finite.** Services outside the catalog, and in-house trackers, are not detected, and the catalog needs updates over time.
 - **Self-hosted services.** Some services, such as Sentry or Matomo, can run on the servers of the developer, so they do not always send data to a third party.
 - **Preinstalled apps.** Many system apps have no readable code in their APK, so they appear as not readable.
+- **AppWall built from source.** The AppWall button only appears for the official release signature, so a copy of AppWall signed with your own key does not show it.
 - **One profile at a time.** TrackerLens only sees the current profile, so a work profile needs its own copy.
 - **Not suited to the Play Store.** `QUERY_ALL_PACKAGES` is restricted, so the app is meant to be installed directly.
 
 ## Test status
 
-Tested on one phone: Oppo Reno4 Z 5G, Android 12, ColorOS, using the signed release build.
+Unit tests for the current source: 53 pass, including crafted DEX and APK files for the parser limits.
+
+The device checks below were done on version 1.0.0, on one phone: Oppo Reno4 Z 5G, Android 12, ColorOS, using the signed release build. Version 1.0.1 passed 3,000 random input events on the same phone with test apps that use a 6000x6000 icon and a long label containing a bidi character, with no crash or ANR. Its parser limits have only been checked with unit tests.
 
 | Check | Result |
 | --- | --- |
-| Unit tests | 28 pass |
 | Class names read, compared with `dexdump` on 3 apps (75,619 classes) | No difference |
 | Results compared with Exodus Privacy on 8 apps | Same or close, and app versions may differ. The gaps found were added to the list |
 | Scan of 91 apps | Between 8 and 21 seconds |

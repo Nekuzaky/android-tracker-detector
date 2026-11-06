@@ -4,6 +4,8 @@ class SignatureMatcher(trackers: List<Tracker>) {
     private val byPackage = HashMap<String, MutableList<Tracker>>()
     private val byManifestKey = HashMap<String, MutableList<Tracker>>()
     private val excluded = HashMap<String, List<String>>()
+    private val maxDepth: Int
+    private val maxLength: Int
 
     init {
         for (tracker in trackers) {
@@ -11,14 +13,18 @@ class SignatureMatcher(trackers: List<Tracker>) {
             tracker.manifestKeys.forEach { byManifestKey.getOrPut(it) { ArrayList() }.add(tracker) }
             excluded[tracker.id] = tracker.excluded.map(::slashed)
         }
+        maxDepth = byPackage.keys.maxOfOrNull { key -> key.count { it == '/' } + 1 } ?: 0
+        maxLength = byPackage.keys.maxOfOrNull { it.length } ?: 0
     }
 
     fun matchPackage(packagePath: String): List<Tracker> {
         var matches: MutableList<Tracker>? = null
         var end = packagePath.indexOf('/')
-        while (true) {
-            val prefix = if (end < 0) packagePath else packagePath.substring(0, end)
-            byPackage[prefix]?.forEach { tracker ->
+        var depth = 1
+        while (depth <= maxDepth) {
+            val stop = if (end < 0) packagePath.length else end
+            if (stop > maxLength) break
+            byPackage[packagePath.substring(0, stop)]?.forEach { tracker ->
                 if (!isExcluded(tracker, packagePath)) {
                     val list = matches ?: ArrayList<Tracker>().also { matches = it }
                     if (tracker !in list) list.add(tracker)
@@ -26,6 +32,7 @@ class SignatureMatcher(trackers: List<Tracker>) {
             }
             if (end < 0) break
             end = packagePath.indexOf('/', end + 1)
+            depth++
         }
         return matches ?: emptyList()
     }
@@ -54,6 +61,8 @@ class EvidenceCollector(private val matcher: SignatureMatcher) {
     var classes = 0
         private set
 
+    val cachedPackages get() = cache.size
+
     fun addDescriptor(descriptor: String) {
         classes++
         if (descriptor.length < 3 || descriptor[0] != 'L') return
@@ -62,7 +71,10 @@ class EvidenceCollector(private val matcher: SignatureMatcher) {
         val sameAsLast = lastPackage.length == end - 1 && descriptor.regionMatches(1, lastPackage, 0, end - 1)
         if (!sameAsLast) {
             lastPackage = descriptor.substring(1, end)
-            lastMatches = cache.getOrPut(lastPackage) { matcher.matchPackage(lastPackage) }
+            lastMatches = cache[lastPackage] ?: matcher.matchPackage(lastPackage).also {
+                if (cache.size >= MAX_CACHED_PACKAGES) cache.clear()
+                cache[lastPackage] = it
+            }
         }
         for (tracker in lastMatches) {
             classCounts[tracker.id] = (classCounts[tracker.id] ?: 0) + 1
@@ -82,4 +94,8 @@ class EvidenceCollector(private val matcher: SignatureMatcher) {
             Catalog.byId[id]?.let { Detection(it, classCounts[id] ?: 0, id in manifestHits) }
         }
         .sortedWith(Ranking.detectionOrder)
+
+    companion object {
+        const val MAX_CACHED_PACKAGES = 8_192
+    }
 }

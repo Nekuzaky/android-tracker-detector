@@ -104,7 +104,11 @@ class AppDetailActivity : Activity() {
         add(Row.Header(getString(R.string.section_trackers)))
         val confirmed = scan.confirmed
         if (confirmed.isEmpty()) {
-            val text = if (scan.coverage == Coverage.NONE) R.string.summary_unreadable else R.string.summary_none
+            val text = when (scan.coverage) {
+                Coverage.NONE -> R.string.summary_unreadable
+                Coverage.PARTIAL -> R.string.summary_partial
+                Coverage.FULL -> R.string.summary_none
+            }
             add(Row.InfoRow(getString(text), ""))
         } else {
             confirmed.forEach { add(trackerRow(it)) }
@@ -125,6 +129,9 @@ class AppDetailActivity : Activity() {
             Coverage.NONE -> getString(R.string.coverage_none)
         }
         add(Row.InfoRow(coverage, getString(R.string.coverage_note)))
+        if (!scan.manifestComplete) {
+            add(Row.InfoRow(getString(R.string.manifest_incomplete), getString(R.string.manifest_incomplete_detail)))
+        }
     }
 
     private fun trackerRow(detection: Detection): Row {

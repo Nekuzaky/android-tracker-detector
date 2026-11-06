@@ -12,7 +12,7 @@
     <string name="hero_loading">Reading your apps…</string>
     <string name="hero_scanning">Scanning %1$d of %2$d apps…</string>
     <string name="hero_done">%1$d different trackers · %2$d apps scanned</string>
-    <string name="hero_done_unreadable">%1$d different trackers · %2$d apps scanned, %3$d not readable</string>
+    <string name="hero_done_incomplete">%1$d different trackers · %2$d apps scanned, %3$d not fully read</string>
     <string name="tab_apps">Apps</string>
     <string name="tab_trackers">Trackers</string>
     <string name="search_hint">Search</string>
@@ -26,6 +26,8 @@
 
     <string name="summary_none">No known tracker found</string>
     <string name="summary_unreadable">Code could not be read</string>
+    <string name="summary_partial">Code only partly read</string>
+    <string name="summary_manifest_incomplete">No known tracker found, manifest not fully read</string>
     <string name="summary_more">%1$s +%2$d</string>
 
     <string name="section_trackers">Known trackers</string>
@@ -63,6 +65,8 @@
         <item quantity="other">Code partly read: %1$d classes</item>
     </plurals>
     <string name="coverage_none">Code could not be read</string>
+    <string name="manifest_incomplete">Manifest not fully read</string>
+    <string name="manifest_incomplete_detail">Android could not return the full manifest of this app, so declared services, metadata and the advertising ID permission may be missing here.</string>
     <string name="coverage_note">A match shows the code is in the app, not that it sends data. Renamed code, native code and code downloaded later can stay hidden, so no match does not prove an app is free of trackers.</string>
 
     <string name="category_advertising">Advertising</string>

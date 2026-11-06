@@ -29,12 +29,18 @@ object ScanEngine {
     private const val CACHE_FILE = "scans.tsv"
     private const val PUBLISH_INTERVAL_MS = 200L
     private const val SAVE_EVERY = 10
+    private const val RETRY_INTERVAL_MS = 15 * 60 * 1000L
     private val COMPONENT_FLAGS = listOf(
         PackageManager.GET_ACTIVITIES,
         PackageManager.GET_RECEIVERS,
         PackageManager.GET_SERVICES,
         PackageManager.GET_PROVIDERS,
     )
+    private val MANIFEST_FLAGS = listOf(PackageManager.GET_PERMISSIONS, PackageManager.GET_META_DATA) + COMPONENT_FLAGS
+
+    private class ScanOutcome(val scan: AppScan, val persist: Boolean)
+
+    private class ManifestRead(val info: PackageInfo?, val complete: Boolean)
 
     private class Target(
         val packageName: String,
@@ -50,6 +56,7 @@ object ScanEngine {
     private val matcher by lazy { SignatureMatcher(Catalog.trackers) }
     private val results = ConcurrentHashMap<String, AppScan>()
     private val labels = ConcurrentHashMap<String, String>()
+    private val retryAt = ConcurrentHashMap<String, Long>()
     private val lock = Any()
     private val publishLock = Any()
     private var active = false
@@ -113,14 +120,20 @@ object ScanEngine {
         val before = results.size
         results.keys.retainAll(targets.keys)
         labels.keys.retainAll(targets.keys)
+        retryAt.keys.retainAll(targets.keys)
         for (target in targets.values) {
             val known = results[target.packageName] ?: continue
             if (known.versionCode != target.versionCode || known.lastUpdate != target.lastUpdate) {
                 results.remove(target.packageName)
                 labels.remove(target.packageName)
+                retryAt.remove(target.packageName)
             }
         }
-        val queue = targets.values.filter { (!it.isSystem || includeSystem) && !results.containsKey(it.packageName) }
+        val clock = SystemClock.elapsedRealtime()
+        val queue = targets.values.filter { target ->
+            val due = retryAt[target.packageName]?.let { it <= clock } ?: false
+            (!target.isSystem || includeSystem) && (due || !results.containsKey(target.packageName))
+        }
         if (queue.isEmpty()) {
             publish(buildSnapshot(manager, targets, 0, 0, false))
             if (results.size != before) saveCache(context)
@@ -134,7 +147,13 @@ object ScanEngine {
             val tasks = queue.map { target ->
                 Callable {
                     Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
-                    scan(manager, target)?.let { results[target.packageName] = it }
+                    scan(manager, target)?.let { outcome ->
+                        if (!outcome.persist) {
+                            retryAt[target.packageName] = SystemClock.elapsedRealtime() + RETRY_INTERVAL_MS
+                        }
+                        results[target.packageName] = outcome.scan
+                        if (outcome.persist) retryAt.remove(target.packageName)
+                    }
                     val finished = done.incrementAndGet()
                     if (finished % SAVE_EVERY == 0) saveCache(context)
                     val now = SystemClock.elapsedRealtime()
@@ -183,75 +202,97 @@ object ScanEngine {
         val apps = results.values.mapNotNull { scan ->
             val target = targets[scan.packageName] ?: return@mapNotNull null
             val label = labels.getOrPut(scan.packageName) {
-                runCatching { target.info.loadLabel(manager).toString() }.getOrDefault(scan.packageName)
+                runCatching { AppLabels.clean(target.info.loadLabel(manager), scan.packageName) }
+                    .getOrDefault(scan.packageName)
             }
             AppReport(scan, label, target.isSystem)
         }
         return Snapshot(apps, scanned, total, running, loaded = true, failed = false)
     }
 
-    private fun scan(manager: PackageManager, target: Target): AppScan? {
+    private fun scan(manager: PackageManager, target: Target): ScanOutcome? {
         val collector = EvidenceCollector(matcher)
-        return try {
-            val manifest = readManifest(manager, target.packageName) ?: return null
-            var usesAdvertisingId = false
-            manifest.requestedPermissions?.forEach { if (it == AD_ID_PERMISSION) usesAdvertisingId = true }
-            manifest.activities?.forEach { collector.addComponent(it.name) }
-            manifest.receivers?.forEach { collector.addComponent(it.name) }
-            manifest.services?.forEach { collector.addComponent(it.name) }
-            manifest.providers?.forEach { collector.addComponent(it.name) }
-            manifest.applicationInfo?.metaData?.keySet()?.forEach(collector::addManifestKey)
+        var usesAdvertisingId = false
+        var manifestComplete = false
 
-            val application = manifest.applicationInfo ?: target.info
-            val apks = listOfNotNull(application.sourceDir) + application.splitSourceDirs.orEmpty()
-            var result = CodeScanResult(0, 0)
-            for (apk in apks) {
-                result += ApkCodeScanner.scan(File(apk)) { collector.addDescriptor(it) }
-            }
-            AppScan(
-                target.packageName,
-                target.versionCode,
-                target.lastUpdate,
-                result.coverage,
-                collector.classes,
-                usesAdvertisingId,
-                collector.detections(),
-            )
-        } catch (e: PackageManager.NameNotFoundException) {
-            null
-        } catch (e: Throwable) {
+        fun failed(persist: Boolean) = ScanOutcome(
             AppScan(
                 target.packageName,
                 target.versionCode,
                 target.lastUpdate,
                 Coverage.NONE,
                 collector.classes,
-                false,
+                usesAdvertisingId,
                 runCatching { collector.detections() }.getOrDefault(emptyList()),
+                manifestComplete,
+            ),
+            persist && manifestComplete,
+        )
+
+        return try {
+            val read = readManifest(manager, target.packageName) ?: return null
+            val manifest = read.info
+            manifestComplete = read.complete
+            manifest?.requestedPermissions?.forEach { if (it == AD_ID_PERMISSION) usesAdvertisingId = true }
+            manifest?.activities?.forEach { collector.addComponent(it.name) }
+            manifest?.receivers?.forEach { collector.addComponent(it.name) }
+            manifest?.services?.forEach { collector.addComponent(it.name) }
+            manifest?.providers?.forEach { collector.addComponent(it.name) }
+            manifest?.applicationInfo?.metaData?.keySet()?.forEach(collector::addManifestKey)
+
+            val application = manifest?.applicationInfo ?: target.info
+            val apks = listOfNotNull(application.sourceDir) + application.splitSourceDirs.orEmpty()
+            val budget = ScanBudget()
+            var result = CodeScanResult(0, 0)
+            for (apk in apks) {
+                result += ApkCodeScanner.scan(File(apk), budget) { collector.addDescriptor(it) }
+            }
+            ScanOutcome(
+                AppScan(
+                    target.packageName,
+                    target.versionCode,
+                    target.lastUpdate,
+                    result.coverage,
+                    collector.classes,
+                    usesAdvertisingId,
+                    collector.detections(),
+                    manifestComplete,
+                ),
+                manifestComplete,
             )
+        } catch (e: ScanBudgetExceeded) {
+            failed(persist = !e.retryable)
+        } catch (e: Throwable) {
+            failed(persist = false)
         }
     }
 
-    private fun readManifest(manager: PackageManager, packageName: String): PackageInfo? {
-        val base = PackageManager.GET_PERMISSIONS or PackageManager.GET_META_DATA or
-            PackageManager.MATCH_DISABLED_COMPONENTS
-        val all = COMPONENT_FLAGS.reduce { flags, flag -> flags or flag }
+    private fun readManifest(manager: PackageManager, packageName: String): ManifestRead? {
+        val all = MANIFEST_FLAGS.reduce { flags, flag -> flags or flag } or PackageManager.MATCH_DISABLED_COMPONENTS
         try {
-            return manager.getPackageInfo(packageName, base or all)
+            return ManifestRead(manager.getPackageInfo(packageName, all), true)
         } catch (e: PackageManager.NameNotFoundException) {
             return null
         } catch (e: RuntimeException) {
-            val merged = runCatching { manager.getPackageInfo(packageName, base) }.getOrNull() ?: return null
-            for (flag in COMPONENT_FLAGS) {
+            var merged: PackageInfo? = null
+            var complete = true
+            for (flag in MANIFEST_FLAGS) {
                 val part = runCatching {
                     manager.getPackageInfo(packageName, PackageManager.MATCH_DISABLED_COMPONENTS or flag)
-                }.getOrNull() ?: continue
-                part.activities?.let { merged.activities = it }
-                part.receivers?.let { merged.receivers = it }
-                part.services?.let { merged.services = it }
-                part.providers?.let { merged.providers = it }
+                }.getOrNull()
+                if (part == null) {
+                    complete = false
+                    continue
+                }
+                val info = merged ?: part.also { merged = it }
+                part.requestedPermissions?.let { info.requestedPermissions = it }
+                part.activities?.let { info.activities = it }
+                part.receivers?.let { info.receivers = it }
+                part.services?.let { info.services = it }
+                part.providers?.let { info.providers = it }
+                if (flag == PackageManager.GET_META_DATA) info.applicationInfo = part.applicationInfo
             }
-            return merged
+            return ManifestRead(merged, complete)
         }
     }
 
@@ -274,9 +315,10 @@ object ScanEngine {
         val file = AtomicFile(File(context.filesDir, CACHE_FILE))
         val stream = runCatching { file.startWrite() }.getOrNull() ?: return
         try {
-            stream.write(ReportCache.encode(results.values.toList(), Catalog.version).toByteArray(Charsets.UTF_8))
+            val saved = results.values.filter { !retryAt.containsKey(it.packageName) }
+            stream.write(ReportCache.encode(saved, Catalog.version).toByteArray(Charsets.UTF_8))
             file.finishWrite(stream)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             file.failWrite(stream)
         }
     }

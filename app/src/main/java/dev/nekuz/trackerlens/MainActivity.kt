@@ -159,10 +159,10 @@ class MainActivity : Activity() {
         heroCount.text = withTrackers.toString()
         heroLabel.text = resources.getQuantityText(R.plurals.hero_apps, withTrackers)
         val trackers = reports.flatMap { report -> report.scan.confirmed.map { it.tracker.id } }.toSet().size
-        val unreadable = reports.count { it.scan.coverage == Coverage.NONE }
+        val incomplete = reports.count { it.scan.incomplete }
         heroDetail.text = when {
             snapshot.running -> getString(R.string.hero_scanning, snapshot.scanned, snapshot.total)
-            unreadable > 0 -> getString(R.string.hero_done_unreadable, trackers, reports.size, unreadable)
+            incomplete > 0 -> getString(R.string.hero_done_incomplete, trackers, reports.size, incomplete)
             else -> getString(R.string.hero_done, trackers, reports.size)
         }
     }
@@ -180,7 +180,7 @@ class MainActivity : Activity() {
         val confirmed = report.scan.confirmed
         val tag = when {
             confirmed.isNotEmpty() -> confirmed.size.toString()
-            report.scan.coverage == Coverage.NONE -> "?"
+            report.scan.incomplete -> "?"
             else -> null
         }
         return Row.AppRow(

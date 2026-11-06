@@ -1,6 +1,8 @@
 package dev.nekuz.trackerlens
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReportsTest {
@@ -83,6 +85,43 @@ class ReportsTest {
             listOf("com.found", "com.declared", "com.clean"),
             Ranking.apps(listOf(clean, declared, found)).map { it.packageName },
         )
+    }
+
+    @Test
+    fun partlyReadCodeIsNeverShownAsClean() {
+        val partial = scan("com.partial", coverage = Coverage.PARTIAL)
+        assertEquals(ScanStatus.PARTLY_READ, partial.status)
+        assertTrue(partial.incomplete)
+        assertEquals(ScanStatus.PARTLY_READ, scan("com.d", detection("admob", 0, true), coverage = Coverage.PARTIAL).status)
+        assertEquals(ScanStatus.FOUND, scan("com.f", detection("adjust"), coverage = Coverage.PARTIAL).status)
+        assertEquals(ScanStatus.UNREADABLE, scan("com.u", coverage = Coverage.NONE).status)
+        assertEquals(ScanStatus.NOTHING_FOUND, scan("com.c").status)
+        assertFalse(scan("com.c").incomplete)
+    }
+
+    @Test
+    fun missingManifestEvidenceIsMarked() {
+        val scan = scan("com.m").copy(manifestComplete = false)
+        assertEquals(ScanStatus.MANIFEST_INCOMPLETE, scan.status)
+        assertTrue(scan.incomplete)
+    }
+
+    @Test
+    fun labelsAreCappedAndCleaned() {
+        assertEquals("Signal", AppLabels.clean("Sig‮nal‏\n", "com.x"))
+        assertEquals("Two words", AppLabels.clean("  Two  words\t", "com.x"))
+        assertEquals("com.x", AppLabels.clean("‮⁦\n", "com.x"))
+        assertEquals("com.x", AppLabels.clean("", "com.x"))
+        assertEquals("com.x", AppLabels.clean(null, "com.x"))
+        assertEquals(AppLabels.MAX_LENGTH, AppLabels.clean("a".repeat(5_000_000), "com.x").length)
+        assertEquals("😀".repeat(AppLabels.MAX_LENGTH / 2), AppLabels.clean("😀".repeat(1000), "com.x"))
+        assertEquals("a" + "😀".repeat((AppLabels.MAX_LENGTH - 1) / 2), AppLabels.clean("a" + "😀".repeat(1000), "com.x"))
+        assertEquals("com.x", AppLabels.clean("\uD83D", "com.x"))
+    }
+
+    @Test
+    fun sortKeyIsLowercaseLabel() {
+        assertEquals("zed", report(scan("com.a"), "ZED").sortKey)
     }
 
     @Test

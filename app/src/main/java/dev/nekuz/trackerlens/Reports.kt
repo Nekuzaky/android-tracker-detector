@@ -14,13 +14,56 @@ data class AppScan(
     val classes: Int,
     val usesAdvertisingId: Boolean,
     val detections: List<Detection>,
+    val manifestComplete: Boolean = true,
 ) {
     val confirmed get() = detections.filter { it.confirmed }
     val declaredOnly get() = detections.filter { !it.confirmed }
+    val incomplete get() = coverage != Coverage.FULL || !manifestComplete
+    val status: ScanStatus
+        get() = when {
+            confirmed.isNotEmpty() -> ScanStatus.FOUND
+            coverage == Coverage.NONE -> ScanStatus.UNREADABLE
+            coverage == Coverage.PARTIAL -> ScanStatus.PARTLY_READ
+            declaredOnly.isNotEmpty() -> ScanStatus.DECLARED_ONLY
+            !manifestComplete -> ScanStatus.MANIFEST_INCOMPLETE
+            else -> ScanStatus.NOTHING_FOUND
+        }
 }
+
+enum class ScanStatus { FOUND, UNREADABLE, PARTLY_READ, DECLARED_ONLY, MANIFEST_INCOMPLETE, NOTHING_FOUND }
 
 data class AppReport(val scan: AppScan, val label: String, val isSystem: Boolean) {
     val packageName get() = scan.packageName
+    val sortKey = label.lowercase()
+}
+
+object AppLabels {
+    const val MAX_LENGTH = 128
+
+    fun clean(raw: CharSequence?, fallback: String): String {
+        if (raw == null) return fallback
+        val text = StringBuilder()
+        var index = 0
+        while (index < raw.length && text.length < MAX_LENGTH) {
+            val codePoint = Character.codePointAt(raw, index)
+            index += Character.charCount(codePoint)
+            if (isHidden(codePoint)) continue
+            if (text.length + Character.charCount(codePoint) > MAX_LENGTH) break
+            text.appendCodePoint(codePoint)
+        }
+        val label = text.toString().trim()
+        return label.ifEmpty { fallback }
+    }
+
+    private fun isHidden(codePoint: Int) = when (Character.getType(codePoint).toByte()) {
+        Character.CONTROL,
+        Character.FORMAT,
+        Character.LINE_SEPARATOR,
+        Character.PARAGRAPH_SEPARATOR,
+        Character.SURROGATE,
+        Character.UNASSIGNED -> true
+        else -> false
+    }
 }
 
 data class TrackerSummary(val tracker: Tracker, val apps: List<AppReport>)
@@ -33,7 +76,7 @@ object Ranking {
         compareByDescending<AppReport> { it.scan.confirmed.size }
             .thenByDescending { it.scan.declaredOnly.size }
             .thenBy { it.scan.coverage != Coverage.FULL }
-            .thenBy { it.label.lowercase() }
+            .thenBy { it.sortKey }
             .thenBy { it.packageName }
     )
 
@@ -56,7 +99,7 @@ object Ranking {
 }
 
 object ReportCache {
-    private const val HEADER = "trackerlens-cache-1"
+    private const val HEADER = "trackerlens-cache-2"
 
     fun encode(scans: Collection<AppScan>, version: String): String = buildString {
         append(HEADER).append('\t').append(version).append('\n')
